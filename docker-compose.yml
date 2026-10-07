@@ -1,0 +1,17 @@
+services:
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jenkins-lts-build-essential:latest
+    container_name: jenkins-qualite
+    restart: unless-stopped
+    user: jenkins
+    ports:
+      - "8080:8080"   # interface web
+      - "50000:50000" # agentes Jenkins (JNLP)
+    volumes:
+      - jenkins_home:/var/jenkins_home
+
+volumes:
+  jenkins_home:
