@@ -1,0 +1,55 @@
+// Pipeline 2 : Pre-production (profilage avec valgrind)
+// Valgrind n'existe que sous Linux : sous Windows on passe par WSL.
+
+def run(String cmd) {
+    if (isUnix()) {
+        sh cmd
+    } else {
+        bat "wsl ${cmd}"   // execute la commande dans WSL, dans le dossier courant
+    }
+}
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Compilation (symboles de debug)') {
+            steps {
+                // -g -O0 : valgrind affiche ainsi fichiers et lignes exacts
+                script { run 'make clean && make all' }
+            }
+        }
+
+        stage('Profilage valgrind - memcheck') {
+            steps {
+                script {
+                    run 'valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=1 --log-file=valgrind.log ./tri_bulles'
+                }
+            }
+        }
+
+        stage('Profilage valgrind - callgrind') {
+            steps {
+                script {
+                    run 'valgrind --tool=callgrind --callgrind-out-file=callgrind.out ./tri_bulles'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'valgrind.log, callgrind.out', allowEmptyArchive: true
+        }
+        success {
+            build job: 'prod', wait: false
+        }
+        failure {
+            echo 'Pre-prod en echec : voir valgrind.log (fuite memoire ou acces invalide).'
+        }
+    }
+}

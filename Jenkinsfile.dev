@@ -1,0 +1,51 @@
+// Pipeline 1 : Developpement / Tests
+// Declenche a chaque push GitHub. Compile, genere l'executable, execute les tests.
+// Fonctionne sous Windows (MSYS2) et sous Linux (Docker).
+
+def run(String cmd) {
+    if (isUnix()) { sh cmd } else { bat cmd }
+}
+
+pipeline {
+    agent any
+
+    triggers {
+        githubPush()
+        // Solution de secours si le webhook n'est pas disponible :
+        // pollSCM('H/2 * * * *')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Compilation') {
+            steps {
+                // PATH MSYS2 uniquement sous Windows
+                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
+                    script { run 'make clean && make all' }
+                }
+            }
+        }
+
+        stage('Tests') {
+            steps {
+                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
+                    script { run 'make test' }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            archiveArtifacts artifacts: 'tri_bulles*', fingerprint: true
+            // Enchaine avec la pre-production
+            build job: 'preprod', wait: false
+        }
+        failure {
+            echo 'Pipeline Dev en echec : compilation ou tests.'
+        }
+    }
+}
