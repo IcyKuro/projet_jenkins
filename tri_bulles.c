@@ -1,4 +1,5 @@
-#include <stdio.h>
+#include <stddef.h>
+#include "tri_bulles.h"
 
 /* Echange les elements d'indices i et j du tableau. */
 void swap(int *arr, int i, int j)
@@ -24,18 +25,3 @@ void bubbleSort(int arr[], int n)
         }
     }
 }
-
-#ifndef UNIT_TEST /* le main est exclu lors de la compilation des tests */
-int main(void)
-{
-    int arr[] = {5, 6, 1, 3};
-    int n = sizeof(arr) / sizeof(arr[0]);
-
-    bubbleSort(arr, n);
-
-    for (int i = 0; i < n; i++)
-        printf("%d ", arr[i]);
-    printf("\n");
-    return 0;
-}
-#endif

@@ -1,55 +1,47 @@
-// Pipeline 2 : Pre-production (profilage avec valgrind)
-// Valgrind n'existe que sous Linux : sous Windows on passe par WSL.
-
-def run(String cmd) {
-    if (isUnix()) {
-        sh cmd
-    } else {
-        bat "wsl ${cmd}"   // execute la commande dans WSL, dans le dossier courant
-    }
-}
+// Pipeline 2 : Pre-production, profilage avec valgrind
+// Lance par le pipeline Dev en cas de succes.
 
 pipeline {
     agent any
 
     stages {
-        stage('Checkout') {
-            steps { checkout scm }
+        stage('Compilation debug') {
+            // -g -O0 : valgrind peut afficher les noms de fonctions et les numeros de ligne
+            steps { sh 'make debug' }
         }
 
-        stage('Compilation (symboles de debug)') {
+        stage('Tests') {
+            steps { sh 'make test' }
+        }
+
+        stage('Memcheck') {
+            // 50 entiers en ordre inverse : pire cas du tri a bulles
+            // --error-exitcode=1 fait echouer le pipeline a la moindre erreur memoire
             steps {
-                // -g -O0 : valgrind affiche ainsi fichiers et lignes exacts
-                script { run 'make clean && make all' }
+                sh '''valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all \
+                    --track-origins=yes --error-exitcode=1 --log-file=memcheck.log \
+                    ./tri_bulles $(seq 50 -1 1)'''
+                sh 'cat memcheck.log'
             }
         }
 
-        stage('Profilage valgrind - memcheck') {
+        stage('Callgrind') {
             steps {
-                script {
-                    run 'valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=1 --log-file=valgrind.log ./tri_bulles'
-                }
-            }
-        }
-
-        stage('Profilage valgrind - callgrind') {
-            steps {
-                script {
-                    run 'valgrind --tool=callgrind --callgrind-out-file=callgrind.out ./tri_bulles'
-                }
+                sh 'valgrind --tool=callgrind --callgrind-out-file=callgrind.out ./tri_bulles $(seq 50 -1 1)'
+                sh 'callgrind_annotate callgrind.out | tee callgrind.txt'
             }
         }
     }
 
     post {
         always {
-            archiveArtifacts artifacts: 'valgrind.log, callgrind.out', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'memcheck.log, callgrind.out, callgrind.txt', allowEmptyArchive: true
         }
         success {
-            build job: 'prod', wait: false
+            build job: 'tri-bulles-prod', wait: false
         }
         failure {
-            echo 'Pre-prod en echec : voir valgrind.log (fuite memoire ou acces invalide).'
+            echo 'Pre-prod en echec : voir memcheck.log. La prod n est pas lancee.'
         }
     }
 }

@@ -1,56 +1,40 @@
 // Pipeline 3 : Production
-// make clean -> compilation -> strip -> make install
-
-def run(String cmd) {
-    if (isUnix()) { sh cmd } else { bat cmd }
-}
-
-def prodDir = isUnix() ? '/var/jenkins_home/prod' : 'C:/prod'
-def exe     = isUnix() ? 'tri_bulles' : 'tri_bulles.exe'
-def listCmd = isUnix() ? "ls -l ${exe}" : "dir ${exe}"
+// Compilation, make clean, strip, puis make install dans /opt/tri_bulles (volume Docker prod_install).
 
 pipeline {
     agent any
 
+    environment {
+        PREFIX = '/opt/tri_bulles'
+    }
+
     stages {
-        stage('Validation') {
-            steps { input message: 'Deployer en production ?', ok: 'Deployer' }
+        stage('Compilation') {
+            steps { sh 'make distclean && make && make test' }
         }
 
-        stage('Checkout') {
-            steps { checkout scm }
-        }
-
-        stage('Clean + Compilation') {
-            steps {
-                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
-                    script { run 'make clean && make all' }
-                }
-            }
+        stage('Make clean') {
+            // Supprime les .o et le binaire de test, l'executable reste
+            steps { sh 'make clean && ls -l tri_bulles' }
         }
 
         stage('Strip') {
             steps {
-                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
-                    echo 'Taille avant strip :'
-                    script { run listCmd }
-                    script { run "strip ${exe}" }
-                    echo 'Taille apres strip :'
-                    script { run listCmd }
-                }
+                sh 'echo "Avant strip :" && ls -l tri_bulles && file tri_bulles'
+                sh 'make strip'
+                sh 'echo "Apres strip :" && ls -l tri_bulles && file tri_bulles'
             }
         }
 
-        stage('Install') {
+        stage('Make install') {
             steps {
-                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
-                    script { run "make install PREFIX=${prodDir}" }
-                }
+                sh 'make install PREFIX="$PREFIX"'
+                sh '"$PREFIX/bin/tri_bulles" 8 3 9 1'
             }
         }
     }
 
     post {
-        success { echo "Programme installe dans ${prodDir}/bin" }
+        success { echo "Programme installe dans ${env.PREFIX}/bin" }
     }
 }

@@ -9,9 +9,11 @@ services:
     user: jenkins
     ports:
       - "8080:8080"   # interface web
-      - "50000:50000" # agentes Jenkins (JNLP)
+      - "50000:50000" # agents Jenkins (JNLP)
     volumes:
       - jenkins_home:/var/jenkins_home
+      - prod_install:/opt/tri_bulles # dossier d'installation de la production
 
 volumes:
   jenkins_home:
+  prod_install:

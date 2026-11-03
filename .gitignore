@@ -5,8 +5,9 @@ CLAUDE.md
 # Fichiers generes
 tri_bulles
 tri_bulles.exe
-tests/test_tri
-tests/test_tri.exe
+tests/test_tri_bulles
+tests/test_tri_bulles.exe
 *.o
-valgrind.log
+memcheck.log
 callgrind.out*
+callgrind.txt
