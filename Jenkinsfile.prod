@@ -1,0 +1,56 @@
+// Pipeline 3 : Production
+// make clean -> compilation -> strip -> make install
+
+def run(String cmd) {
+    if (isUnix()) { sh cmd } else { bat cmd }
+}
+
+def prodDir = isUnix() ? '/var/jenkins_home/prod' : 'C:/prod'
+def exe     = isUnix() ? 'tri_bulles' : 'tri_bulles.exe'
+def listCmd = isUnix() ? "ls -l ${exe}" : "dir ${exe}"
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Validation') {
+            steps { input message: 'Deployer en production ?', ok: 'Deployer' }
+        }
+
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Clean + Compilation') {
+            steps {
+                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
+                    script { run 'make clean && make all' }
+                }
+            }
+        }
+
+        stage('Strip') {
+            steps {
+                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
+                    echo 'Taille avant strip :'
+                    script { run listCmd }
+                    script { run "strip ${exe}" }
+                    echo 'Taille apres strip :'
+                    script { run listCmd }
+                }
+            }
+        }
+
+        stage('Install') {
+            steps {
+                withEnv(isUnix() ? [] : ["PATH=C:\\msys64\\ucrt64\\bin;C:\\msys64\\usr\\bin;${env.PATH}"]) {
+                    script { run "make install PREFIX=${prodDir}" }
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo "Programme installe dans ${prodDir}/bin" }
+    }
+}

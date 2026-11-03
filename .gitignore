@@ -1,3 +1,12 @@
 .env
 *.pdf
 CLAUDE.md
+
+# Fichiers generes
+tri_bulles
+tri_bulles.exe
+tests/test_tri
+tests/test_tri.exe
+*.o
+valgrind.log
+callgrind.out*
