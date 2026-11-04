@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: jenkins-lts-build-essential:latest
-    container_name: jenkins-qualite
+    container_name: jenkins-container
     restart: unless-stopped
     user: jenkins
     ports:
