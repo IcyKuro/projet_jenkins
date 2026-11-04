@@ -1,7 +1,9 @@
 // Pipeline 2 : Pre-production, profilage avec valgrind
-// Lance par le pipeline Dev en cas de succes.
+// Lance par le pipeline Dev en cas de succes. S'il reussit, il lance la production.
+// En cas d'echec (tests ou erreur memoire) : le build passe au rouge, les rapports valgrind deja produits sont quand meme archives pour l'analyse, et la prod n'est pas lancee.
 
 pipeline {
+    // Meme executeur que pour le Dev : valgrind est installe dans l'image du conteneur
     agent any
 
     stages {
@@ -11,23 +13,29 @@ pipeline {
         }
 
         stage('Tests') {
+            // On rejoue les tests sur ce build debug avant de le profiler
             steps { sh 'make test' }
         }
 
         stage('Memcheck') {
             // 50 entiers en ordre inverse : pire cas du tri a bulles
+            // --leak-check=full et --show-leak-kinds=all detaillent chaque fuite trouvee
+            // --track-origins=yes indique d'ou vient une valeur non initialisee
             // --error-exitcode=1 fait echouer le pipeline a la moindre erreur memoire
             steps {
                 sh '''valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all \
                     --track-origins=yes --error-exitcode=1 --log-file=memcheck.log \
                     ./tri_bulles $(seq 50 -1 1)'''
+                // Le rapport est ecrit dans un fichier, on l'affiche aussi dans la console du build
                 sh 'cat memcheck.log'
             }
         }
 
         stage('Callgrind') {
             steps {
+                // Compte les instructions executees par chaque fonction sur le meme jeu de donnees
                 sh 'valgrind --tool=callgrind --callgrind-out-file=callgrind.out ./tri_bulles $(seq 50 -1 1)'
+                // callgrind.out n'est pas lisible tel quel : callgrind_annotate en fait un tableau par fonction
                 sh 'callgrind_annotate callgrind.out | tee callgrind.txt'
             }
         }
@@ -35,9 +43,11 @@ pipeline {
 
     post {
         always {
+            // Les rapports sont archives meme en cas d'echec, c'est justement la qu'on en a besoin
             archiveArtifacts artifacts: 'memcheck.log, callgrind.out, callgrind.txt', allowEmptyArchive: true
         }
         success {
+            // Aucune erreur memoire : on lance la production
             build job: 'tri-bulles-prod', wait: false
         }
         failure {

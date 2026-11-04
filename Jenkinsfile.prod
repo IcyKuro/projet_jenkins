@@ -1,34 +1,44 @@
 // Pipeline 3 : Production
 // Compilation, make clean, strip, puis make install dans /opt/tri_bulles (volume Docker prod_install).
+// Lance par la pre-production en cas de succes.
+// En cas d'echec : le build passe au rouge et les stages suivants ne s'executent pas. Si l'echec arrive avant make install, la version deja installee dans /opt/tri_bulles reste en place.
 
 pipeline {
     agent any
 
     environment {
+        // Dossier d'installation, monte sur un volume Docker pour survivre aux redemarrages du conteneur
         PREFIX = '/opt/tri_bulles'
     }
 
     stages {
         stage('Compilation') {
+            // Build optimise (-O2) depuis zero, puis un dernier passage des tests avant de livrer
             steps { sh 'make distclean && make && make test' }
         }
 
         stage('Make clean') {
             // Supprime les .o et le binaire de test, l'executable reste
+            // ls -l prouve dans la console que l'executable est toujours la
             steps { sh 'make clean && ls -l tri_bulles' }
         }
 
         stage('Strip') {
             steps {
+                // Taille et etat du binaire avant : file affiche "not stripped"
                 sh 'echo "Avant strip :" && ls -l tri_bulles && file tri_bulles'
+                // Retire la table des symboles et les infos de debogage, inutiles a l'execution
                 sh 'make strip'
+                // Meme mesure apres, pour comparer les tailles dans la console du build
                 sh 'echo "Apres strip :" && ls -l tri_bulles && file tri_bulles'
             }
         }
 
         stage('Make install') {
             steps {
+                // Copie l'executable dans $PREFIX/bin
                 sh 'make install PREFIX="$PREFIX"'
+                // On lance la version installee pour verifier qu'elle fonctionne a son nouvel emplacement
                 sh '"$PREFIX/bin/tri_bulles" 8 3 9 1'
             }
         }

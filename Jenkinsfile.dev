@@ -1,32 +1,43 @@
 // Pipeline 1 : Developpement / Tests
 // Se declenche a chaque modification du code sur GitHub, compile, genere l'executable et lance les tests.
+// S'il reussit, il lance la pre-production.
+// En cas d'echec : le build passe au rouge sur le stage fautif, rien n'est archive
+// et la pre-prod comme la prod ne sont pas lancees.
 
 pipeline {
+    // N'importe quel executeur disponible fait l'affaire : ici, le conteneur Jenkins lui-meme
     agent any
 
     triggers {
+        // Lance le build des que GitHub signale un push (necessite un webhook joignable)
         githubPush()
         // Jenkins en local n'est pas joignable par GitHub sans tunnel : la scrutation sert de filet
+        // H/2 : toutes les deux minutes environ, avec un decalage choisi par Jenkins pour etaler la charge
         pollSCM('H/2 * * * *')
     }
 
     stages {
         stage('Compilation') {
+            // distclean efface tout ce qui reste d'un build precedent, puis make recompile depuis zero
             steps { sh 'make distclean && make' }
         }
 
         stage('Tests') {
+            // Le programme de test renvoie un code non nul au premier echec, ce qui fait echouer le stage
             steps { sh 'make test' }
         }
 
         stage('Execution') {
+            // On lance le programme sans argument (tableau du sujet), puis avec des valeurs a trier
             steps { sh './tri_bulles && ./tri_bulles 8 3 9 1' }
         }
     }
 
     post {
         success {
+            // On garde l'executable dans Jenkins pour pouvoir le telecharger depuis la page du build
             archiveArtifacts artifacts: 'tri_bulles', fingerprint: true
+            // Tout est vert : on passe la main a la pre-production sans attendre qu'elle se termine
             build job: 'tri-bulles-preprod', wait: false
         }
         failure {
