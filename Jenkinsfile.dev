@@ -10,9 +10,9 @@ pipeline {
 
     triggers {
         // Lance le build des que GitHub signale un push (necessite un webhook joignable)
-        githubPush()
-        // Jenkins en local n'est pas joignable par GitHub sans tunnel : la scrutation sert de filet
-        // H/2 : toutes les deux minutes environ, avec un decalage choisi par Jenkins pour etaler la charge
+        // githubPush()
+        // Jenkins en local n'est pas joignable par GitHub sans tunnel
+        // H/2 : toutes les deux minutes environ, une vérification est effectuée
         pollSCM('H/2 * * * *')
     }
 
