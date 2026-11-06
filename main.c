@@ -49,6 +49,5 @@ int main(int argc, char *argv[])
         printf("%d ", arr[i]);
     printf("\n");
 
-    free(arr);
     return EXIT_SUCCESS;
 }
