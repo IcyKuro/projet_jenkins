@@ -22,7 +22,7 @@ void bubbleSort(int arr[], int n)
         /* Les i derniers elements sont deja a leur place. */
         for (int j = 0; j < n - i - 1; j++)
         {
-            if (arr[j] > arr[j + 1])
+            if (arr[j] < arr[j + 1])
             {
                 swap(arr, j, j + 1);
                 hasSwapped = true;
