@@ -1,0 +1,398 @@
+========================================================================
+ TODO - Finaliser l'option 2 (serveur git perso + Jenkins)
+ Projet BUT3 - Qualite de dev
+ Objectif : chaine fonctionnelle pour une demo ou des tests perso
+ Derniere mise a jour : 06/11/2026
+========================================================================
+
+ETAT ACTUEL
+------------------------------------------------------------------------
+  [x] docker-compose.yml racine cree, corrige et valide
+  [x] Anciens conteneurs de test arretes et supprimes
+  [x] Anciens volumes supprimes (repart de zero)
+  [x] git-serv/Dockerfile corrige (curl + copie de ssh_key.pub)
+  [x] jenkins/Dockerfile verifie (git, ssh, gcc, make, strip, valgrind)
+  [x] Paire de cles generee et connexion SSH git_user testee OK
+  [x] Volume prod_install declare dans le compose
+  [x] Premier push reussi (branche main presente dans le depot bare)
+  [x] Hook post-receive : erreur CRLF corrigee (il s'execute maintenant)
+  [x] Hook post-receive configure (job Dev + token) et teste
+  [x] Lecture anonyme autorisee (sinon 403 Hudson.Read sur le hook)
+  [x] Jobs tri-bulles-dev et tri-bulles-prod crees
+  [x] Jenkinsfiles adaptes a l'option 2 (Dev -> Prod)
+  [x] Test de bout en bout OK : Dev #3 SUCCESS -> Prod #1 SUCCESS
+  [x] Binaire installe dans /opt/tri_bulles/bin (volume prod_install)
+  [x] Artefact tri_bulles archive dans le build Dev
+
+  Reste a faire : livrables (Word, video, depot sur Drive).
+
+Dossiers :
+  git-serv/     <-- serveur git (Dockerfile, ssh_key.pub, post-receive.sh)
+  jenkins/      <-- depot git LOCAL (code C, Makefile, tests, Jenkinsfiles)
+  docker-compose.yml
+
+
+------------------------------------------------------------------------
+ ETAPE 1 - NETTOYAGE  [FAIT]
+------------------------------------------------------------------------
+[x] Ancien conteneur jenkins-container / jenkins-qualite / git-qualite
+    arretes et supprimes.
+
+[x] Volumes supprimes :
+      jenkins_jenkins_home
+      jenkins_prod_install
+      qualite_dev_jenkins_home
+      qualite_dev_git_repos
+
+    -> Au prochain "up", Docker recreera des volumes NEUFS :
+       qualite_dev_jenkins_home
+       qualite_dev_prod_install
+       qualite_dev_git_repos
+
+[x] Port 2222 verifie (le SSH a deja fonctionne).
+
+[!] Ne PAS lancer jenkins/docker-compose.yml en meme temps que le compose
+    racine (conflit port 8080 + volume partage).
+
+
+------------------------------------------------------------------------
+ ETAPE 2 - DOCKERFILES  [FAIT]
+------------------------------------------------------------------------
+[x] git-serv/Dockerfile :
+      apt-get install -y openssh-server git curl     (le "&&" manquant
+                                                      est corrige)
+      COPY ssh_key.pub .../authorized_keys
+
+[x] jenkins/Dockerfile :
+      build-essential, valgrind, file
+      dossier /opt/tri_bulles cree
+      plugins : workflow-aggregator, git, github
+
+[x] Outils verifies dans l'image Jenkins :
+      git 2.47.3 / OpenSSH 10.0 / gcc 14.2
+
+[ ] (Optionnel) retirer le plugin "github" de jenkins-plugin-cli :
+    inutile pour l'option 2 (aucune solution tierce).
+
+
+------------------------------------------------------------------------
+ ETAPE 3 - COMPOSE  [FAIT]
+------------------------------------------------------------------------
+[x] Service jenkins : volumes jenkins_home + prod_install.
+[x] Service git-server : port 2222, volume git_repos, reseau ci-net.
+[x] Section volumes corrigee :
+
+        volumes:
+          jenkins_home:
+          prod_install:
+          git_repos:
+
+[x] "docker compose config --quiet" passe.
+
+[ ] (Optionnel) healthcheck / retry pour attendre que sshd soit pret.
+
+
+------------------------------------------------------------------------
+ ETAPE 4 - CLES SSH  [FAIT]
+------------------------------------------------------------------------
+[x] Cle generee (ed25519) : ~/.ssh/qualite_git + ~/.ssh/qualite_git.pub
+[x] Cle publique copiee dans git-serv/ssh_key.pub
+[x] Connexion testee avec succes :
+        ssh -i ~/.ssh/qualite_git -p 2222 git_user@localhost
+
+[x] FAIT : alias ~/.ssh/config ajoute. Il evite l'invite de
+    mot de passe pour "ssh" ET pour "git push" :
+        Host git-local
+            HostName localhost
+            Port 2222
+            User git_user
+            IdentityFile ~/.ssh/qualite_git
+            StrictHostKeyChecking accept-new
+
+    /!\ Sans "-i" (ou sans cet alias), ssh n'utilise PAS
+        ~/.ssh/qualite_git : il bascule en authentification par mot de
+        passe, et git_user n'a pas de mot de passe -> echec.
+        C'est valable aussi pour les commandes git (clone, push...).
+
+RAPPEL : la cle privee (~/.ssh/qualite_git) servira au credential Jenkins
+a l'etape 6.
+
+
+------------------------------------------------------------------------
+ ETAPE 5 - PREMIER PUSH VERS LE SERVEUR BARE  [FAIT]
+------------------------------------------------------------------------
+[x] Demarrer l'infra fraiche :
+        cd /home/localuser/Documents/ecole/qualite_dev
+        docker compose up -d --build
+        docker compose ps
+
+[x] Depuis le depot local qui contient le code :
+        cd /home/localuser/Documents/ecole/qualite_dev/jenkins
+
+    OPTION A (recommandee, si l'alias ~/.ssh/config de l'etape 4 est
+    en place) :
+        git remote add localgit git-local:/home/git_user/repos/monprojet.git
+        git push -u localgit main
+
+    OPTION B (sans ~/.ssh/config) : forcer la cle a chaque commande git
+        git remote add localgit ssh://git_user@localhost:2222/home/git_user/repos/monprojet.git
+        GIT_SSH_COMMAND="ssh -i ~/.ssh/qualite_git -o StrictHostKeyChecking=accept-new" \
+            git push -u localgit main
+
+    /!\ Avec l'option B, il faudra remettre GIT_SSH_COMMAND a CHAQUE
+        git push (clone, fetch...). L'alias de l'etape 4 evite ca.
+
+    (Si le remote existe deja : git remote set-url localgit <url>)
+
+[x] Verifier que le depot est arrive :
+        git ls-remote localgit
+        # sans ~/.ssh/config :
+        # GIT_SSH_COMMAND="ssh -i ~/.ssh/qualite_git" git ls-remote localgit
+        docker exec -it git-qualite \
+            git --git-dir=/home/git_user/repos/monprojet.git log --oneline -3
+
+    Resultat obtenu : refs/heads/main = c97aed9. Le push est bon.
+    Le hook avait echoue a cause de fins de ligne CRLF : corrige dans
+    git-serv/post-receive.sh (voir etape 9).
+
+
+------------------------------------------------------------------------
+ ETAPE 6 - CONFIGURER JENKINS  [FAIT]
+------------------------------------------------------------------------
+[X] Recuperer le NOUVEAU mot de passe initial (volumes neufs) :
+        docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+[X] Terminer l'assistant (plugins recommandes).
+
+[X] Verifier les plugins : Git, Pipeline, Credentials.
+    (github deja installe, inutile)
+
+[X] Scenario de premiere connexion au depot :
+    Manage Jenkins > Security > Git Host Key Verification Configuration
+    -> "Accept first connection" (ou "No verification" pour la demo)
+
+[X] Autorisation (indispensable pour le hook) :
+    Manage Jenkins > Security > Authorization
+    - "Logged-in users can do anything"
+    - DECOCHER "Prevent anonymous read access"
+    -> sans ca, /build?token=... renvoie 403 (Hudson.Read) avant
+       meme de verifier le token.
+
+[X] Ajouter le credential SSH :
+    Manage Jenkins > Credentials > System > Global > Add Credentials
+    - Kind : SSH Username with private key
+    - Username : git_user
+    - Private key : contenu de ~/.ssh/qualite_git (Enter directly)
+    - ID : git-server-ssh --------------------------------------------------------- IMPORTANT -------------------------------------------------
+    NOTER l'ID.
+
+    /!\ Si "error in libcrypto" avec "Enter directly", utiliser la
+        methode fichier ("From a file on Jenkins controller") :
+          docker cp ~/.ssh/qualite_git jenkins-qualite:/var/jenkins_home/.ssh/qualite_git
+          docker exec -u root jenkins-qualite chown -R jenkins:jenkins /var/jenkins_home/.ssh
+          docker exec -u root jenkins-qualite chmod 700 /var/jenkins_home/.ssh
+          docker exec -u root jenkins-qualite chmod 600 /var/jenkins_home/.ssh/qualite_git
+        Chemin : /var/jenkins_home/.ssh/qualite_git
+
+
+------------------------------------------------------------------------
+ ETAPE 7 - CREER LES 2 JOBS (Dev et Prod uniquement)  [FAIT]
+------------------------------------------------------------------------
+[x] Job 1 : tri-bulles-dev
+    - Type : Pipeline
+    - Pipeline script from SCM
+    - SCM : Git
+    - Repository URL : ssh://git_user@git-server/home/git_user/repos/monprojet.git
+      /!\ nom de service "git-server", PAS localhost:2222
+    - Credentials : git-server-ssh
+    - Branch Specifier : */main
+    - Script Path : Jenkinsfile.dev
+    - Cocher "Trigger builds remotely"
+    - Generer / noter un TOKEN (Authentication Token) :
+          9f3a7c1e5b2d4a6f8e0c1b3d5a7f9e2c
+
+[x] Job 2 : tri-bulles-prod
+    - Meme SCM / credentials / branche
+    - Script Path : Jenkinsfile.prod
+    - Pas de trigger : lance par Dev en cas de succes
+    - Cree par copie du job Dev (config.xml : scriptPath=Jenkinsfile.prod,
+      triggers et authToken retires), puis redemarrage de Jenkins.
+      En UI, on peut aussi le creer normalement.
+
+[x] NE PAS creer de job preprod (option 2 = 2 pipelines).
+    Jenkinsfile.preprod peut rester dans le depot, inutilise.
+
+
+------------------------------------------------------------------------
+ ETAPE 8 - ADAPTER LES JENKINSFILES  [FAIT]
+------------------------------------------------------------------------
+[x] Jenkinsfile.dev :
+    - Bloc triggers { ... } entierement supprime (githubPush + pollSCM)
+      -> le hook post-receive est le seul declencheur
+    - Remplacer :
+          build job: 'tri-bulles-preprod'
+      par :
+          build job: 'tri-bulles-prod'
+    - Commentaires mis a jour (serveur git local, hook)
+
+[x] Jenkinsfile.prod :
+    - Commentaire "lance par la pre-production" -> "lance par le pipeline Dev"
+    - Verifier PREFIX = /opt/tri_bulles (volume prod_install, OK)
+
+[x] Makefile : rien a modifier (all, test, clean, strip, install).
+
+[x] Commit 473d708 puis push sur localgit main.
+
+
+------------------------------------------------------------------------
+ ETAPE 9 - BRANCHER LE HOOK post-receive  [FAIT]
+------------------------------------------------------------------------
+[x] git-serv/post-receive.sh (job + token) :
+        #!/bin/bash
+        curl -s "http://jenkins:8080/job/tri-bulles-dev/build?token=9f3a7c1e5b2d4a6f8e0c1b3d5a7f9e2c"
+
+    - nom du job = tri-bulles-dev (etape 7)
+    - token = 9f3a7c1e5b2d4a6f8e0c1b3d5a7f9e2c (le meme dans le job)
+    - pas de "-X POST" (CSRF 403) : le GET avec token renvoie 201
+
+    /!\ FINS DE LIGNE UNIX (LF) OBLIGATOIRES, pas Windows (CRLF).
+        Sinon le push affiche :
+            fatal: cannot exec 'hooks/post-receive': No such file or directory
+        (le shebang devient #!/bin/bash\r).
+        Verification :
+            head -1 git-serv/post-receive.sh | cat -A
+        doit afficher "#!/bin/bash$" et non "#!/bin/bash^M$".
+        Correction :
+            sed -i 's/\r$//' git-serv/post-receive.sh
+        Puis copier dans le conteneur si le volume existe deja (voir plus bas).
+
+[x] Reconstruire l'image git et relancer :
+        cd /home/localuser/Documents/ecole/qualite_dev
+        docker compose build git-server
+        docker compose up -d
+
+    BONNE NOUVELLE : le volume git_repos a ete supprime, donc le nouveau
+    hook sera bien applique au prochain demarrage (pas de vieux hook
+    conserve dans le volume).
+
+    Si tu modifies le hook PLUS TARD sans supprimer le volume :
+        docker cp git-serv/post-receive.sh \
+            git-qualite:/home/git_user/repos/monprojet.git/hooks/post-receive
+        docker exec git-qualite \
+            chmod +x /home/git_user/repos/monprojet.git/hooks/post-receive
+
+[x] Tester le hook a la main :
+        docker exec -it git-qualite curl -v \
+            "http://jenkins:8080/job/tri-bulles-dev/build?token=TON_TOKEN"
+
+    Resultat : HTTP 201, build Dev declenche.
+    Si 403, voir etape 6 (lecture anonyme) : le POST est aussi bloque
+    par CSRF, utiliser GET (pas de -X POST).
+
+
+------------------------------------------------------------------------
+ ETAPE 10 - TEST DE BOUT EN BOUT (demo)  [FAIT]
+------------------------------------------------------------------------
+[x] Modifier un fichier (ex. un commentaire dans tri_bulles.c) :
+        cd /home/localuser/Documents/ecole/qualite_dev/jenkins
+        git commit -am "test: declenchement du pipeline"
+
+    OPTION A (alias ~/.ssh/config) :
+        git push localgit main
+
+    OPTION B (sans alias) :
+        GIT_SSH_COMMAND="ssh -i ~/.ssh/qualite_git -o StrictHostKeyChecking=accept-new" \
+            git push localgit main
+
+[x] Verifier que tri-bulles-dev demarre tout seul (hook).
+[x] Verifier les stages : Compilation, Tests, Execution.
+[x] Verifier que tri-bulles-prod se lance apres le succes de Dev.
+[x] Verifier l'installation :
+        docker compose exec jenkins /opt/tri_bulles/bin/tri_bulles 8 3 9 1
+    -> 1 3 8 9
+[x] Verifier l'artefact tri_bulles archive dans le build Dev.
+
+    Resultat : Dev #3 SUCCESS (artefact tri_bulles), Prod #1 SUCCESS.
+    Le Dev #2 (test manuel du hook avant l'adaptation) a echoue sur
+    "No item named tri-bulles-preprod" : normal, ancien Jenkinsfile.
+
+[ ] Scenario d'echec (optionnel pour la demo) :
+    casser un test -> Dev rouge -> Prod non lancee.
+
+
+------------------------------------------------------------------------
+ ETAPE 11 - LIVRABLES DU PROJET  [A FAIRE]
+------------------------------------------------------------------------
+[ ] Mode operatoire sous Word :
+    - tronc commun (pipelines Dev/Tests et Prod)
+    - option 2 : serveur git perso, SSH direct, hook post-receive
+    - captures d'ecran des jobs / consoles
+    - DERNIER PARAGRAPHE = bilan du projet (points + / -, apprentissages)
+
+[ ] Video expliquant le montage :
+    - lancement du compose
+    - push sur le serveur local
+    - declenchement Jenkins
+    - resultat Dev puis Prod
+
+[ ] Deposer sur un drive accessible en telechargement
+    (Word + video + eventuellement le depot).
+
+
+------------------------------------------------------------------------
+ AIDE-MEMOIRE DES ERREURS FREQUENTES
+------------------------------------------------------------------------
+- "Connection refused" sur le port 2222
+  -> conteneur git-server non demarre (un "build" ne demarre rien).
+     Faire "docker compose up -d".
+
+- "Permission denied (publickey)"
+  -> authorized_keys ne contient pas la bonne cle publique, ou image
+     git non rebuild. (Deja resolu chez toi.)
+
+- "fatal: cannot exec 'hooks/post-receive': No such file or directory"
+  -> fins de ligne CRLF dans post-receive.sh (shebang #!/bin/bash\r).
+     sed -i 's/\r$//' git-serv/post-receive.sh
+     puis docker cp vers le conteneur (ou rebuild + recreate du volume).
+
+- ssh ou git push demande un MOT DE PASSE
+  -> la cle ~/.ssh/qualite_git n'est pas utilisee. Utiliser :
+       ssh  : ssh -i ~/.ssh/qualite_git -p 2222 git_user@localhost
+       git  : GIT_SSH_COMMAND="ssh -i ~/.ssh/qualite_git" git push ...
+     ou, mieux, l'alias "git-local" de ~/.ssh/config (etape 4).
+     git_user n'a pas de mot de passe : l'invite ne peut jamais aboutir.
+
+- Hook silencieux / pipeline non lance
+  -> curl absent (OK maintenant), job mal nomme, token faux, ou
+     git-server ne joint pas jenkins.
+
+- HTTP 403 sur /job/.../build?token=...
+  -> X-Required-Permission: hudson.model.Hudson.Read : decocher
+     "Prevent anonymous read access" (etape 6).
+  -> POST bloque par CSRF : utiliser GET (pas de -X POST).
+
+- "No item named tri-bulles-preprod found"
+  -> ancien Jenkinsfile.dev ; remplacer par tri-bulles-prod,
+     commit puis push.
+
+- "Host key verification failed" dans Jenkins
+  -> Git Host Key Verification mal configure (etape 6).
+
+- Jenkins ne clone pas le depot
+  -> URL localhost:2222 au lieu de git-server ; credential absent ;
+     branche differente de main.
+
+- Prod installe mais binaire perdu apres "docker compose down"
+  -> volume prod_install absent (il est declare maintenant).
+
+- Compose refuse de demarrer : port 8080 deja pris
+  -> un ancien conteneur Jenkins tourne encore.
+
+- "service jenkins refers to undefined volume ..."
+  -> volume utilise dans un service mais non declare dans la section
+     "volumes:" du bas du compose.
+
+
+========================================================================
+ FIN DE LA TODO
+========================================================================

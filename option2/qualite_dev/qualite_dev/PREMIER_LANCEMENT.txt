@@ -1,0 +1,104 @@
+================================================================
+ PREMIER LANCEMENT - OPTION 2 (serveur git local + Jenkins)
+================================================================
+Prerequis : Docker, Docker Compose, git, ssh.
+Ports 8080 (Jenkins) et 2222 (git) libres.
+
+0) Se placer a la racine du projet
+   cd /chemin/vers/qualite_dev
+
+1) Generer la cle SSH
+   ssh-keygen -t ed25519 -f ~/.ssh/qualite_git -C "jenkins-qualite" -N ""
+   cp ~/.ssh/qualite_git.pub git-serv/ssh_key.pub
+
+2) Configurer l'alias SSH dans ~/.ssh/config
+   Host git-local
+       HostName localhost
+       Port 2222
+       User git_user
+       IdentityFile ~/.ssh/qualite_git
+       StrictHostKeyChecking accept-new
+
+   chmod 700 ~/.ssh
+   chmod 600 ~/.ssh/config ~/.ssh/qualite_git
+
+3) Demarrer
+   docker compose up -d --build
+   docker compose ps
+   ssh -o BatchMode=yes git-local 'echo SSH_OK'
+
+   (Si tu as deja des anciens conteneurs/volumes :
+      docker compose down -v)
+
+4) Jenkins : mot de passe initial
+   docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+   Ouvrir http://localhost:8080
+   Installer les plugins recommandes, puis creer le compte admin.
+
+5) Jenkins : securite
+   - Manage Jenkins > Security > Git Host Key Verification :
+       Accept first connection
+   - Manage Jenkins > Security > Authorization :
+       "Logged-in users can do anything"
+       DECOCHER "Prevent anonymous read access"
+
+6) Jenkins : credential SSH (copier-coller)
+   Sur ton PC, afficher la cle privee :
+     cat ~/.ssh/qualite_git
+
+   Copier TOUT le contenu, depuis :
+     -----BEGIN OPENSSH PRIVATE KEY-----
+   jusqu'a :
+     -----END OPENSSH PRIVATE KEY-----
+   (les lignes BEGIN et END doivent etre incluses)
+
+   Manage Jenkins > Credentials > System > Global > Add Credentials
+     Kind        : SSH Username with private key
+     Username    : git_user
+     ID          : git-server-ssh
+     Private key : Enter directly
+     -> coller TOUT le contenu (BEGIN + cle + END)
+
+   /!\ Ne pas coller seulement la cle au milieu : sans les lignes
+       BEGIN/END, Jenkins renvoie "error in libcrypto" ou refuse la cle.
+
+   (Si le copier-coller ne marche pas : methode "From a file on
+    Jenkins controller", detaillee dans PROCEDURE_push_git_bare.txt.)
+
+7) Jenkins : creer les 2 jobs
+   Job tri-bulles-dev :
+     Pipeline script from SCM
+     URL         : ssh://git_user@git-server/home/git_user/repos/monprojet.git
+     Credentials : git-server-ssh
+     Branch      : */main
+     Script Path : Jenkinsfile.dev
+     Cocher "Trigger builds remotely"
+     Token       : 9f3a7c1e5b2d4a6f8e0c1b3d5a7f9e2c
+
+   Job tri-bulles-prod :
+     Meme SCM / credentials / branche
+     Script Path : Jenkinsfile.prod
+     Pas de trigger : lance par Dev en cas de succes.
+
+8) Premier push
+   cd jenkins
+   git remote add localgit git-local:/home/git_user/repos/monprojet.git
+   # si "remote localgit already exists" :
+   git remote set-url localgit git-local:/home/git_user/repos/monprojet.git
+   git push -u localgit main
+
+9) Verifier
+   Le push declenche tri-bulles-dev.
+   Si le job n'existait pas encore : cliquer sur "Build Now" sur Dev.
+   Dev vert -> tri-bulles-prod se lance.
+   Une fois Prod vert :
+   docker compose exec jenkins /opt/tri_bulles/bin/tri_bulles 8 3 9 1
+   -> 1 3 8 9
+
+Rappels
+- Toujours lancer docker compose depuis la racine, pas depuis jenkins/.
+- Ne pas utiliser jenkins/docker-compose.yml (ancien fichier).
+- Le push qui declenche Jenkins : git push localgit main
+- Si "REMOTE HOST IDENTIFICATION HAS CHANGED" :
+    ssh-keygen -R "[localhost]:2222"
+- Procedure complete : PROCEDURE_push_git_bare.txt

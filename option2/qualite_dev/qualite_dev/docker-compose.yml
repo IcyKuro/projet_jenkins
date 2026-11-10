@@ -1,0 +1,77 @@
+# =====================================================================
+#  Chaine CI/CD - Projet BUT3 Qualite de dev - Option 2
+#  Jenkins + serveur git bare (SSH), sur le meme reseau Docker.
+#
+#  Emplacement : /home/localuser/Documents/ecole/qualite_dev/docker-compose.yml
+#
+#  Lancement :
+#      docker compose up -d --build
+#      docker compose ps
+#
+#  Voir PROCEDURE_push_git_bare.txt pour le reste (cles SSH, push, hook).
+# =====================================================================
+
+services:
+
+  # -------------------------------------------------------------------
+  # Jenkins : interface web sur http://localhost:8080
+  # -------------------------------------------------------------------
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    image: jenkins-lts-build-essential:latest
+    container_name: jenkins-qualite
+    restart: unless-stopped
+    user: jenkins
+    ports:
+      - "8080:8080"    # interface web
+      - "50000:50000"  # agentes Jenkins (JNLP)
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - prod_install:/opt/tri_bulles # dossier d'installation de la production
+    networks:
+      - ci-net
+    # Si ton pipeline a besoin des variables de jenkins/.env, decommente :
+    # env_file:
+    #   - ./jenkins/.env
+
+  # -------------------------------------------------------------------
+  # Serveur git bare : SSH sur localhost:2222
+  # Adresse interne (depuis Jenkins) : git-server:22
+  # Depot : /home/git_user/repos/monprojet.git
+  # -------------------------------------------------------------------
+  git-server:
+    build:
+      context: ./git-serv
+      dockerfile: Dockerfile
+    image: git-server-bare:latest
+    container_name: git-qualite
+    restart: unless-stopped
+    ports:
+      - "2222:22"      # 2222 sur l'hote -> 22 dans le conteneur (push manuel)
+    volumes:
+      # Volume NOMME (pas un bind mount vide) : il est initialise avec le
+      # contenu de l'image, donc le depot bare monprojet.git est conserve
+      # meme apres un "docker compose down".
+      - git_repos:/home/git_user/repos
+    networks:
+      - ci-net
+    # depends_on ne garantit pas que sshd ecoute deja :
+    # prevoir un retry / healthcheck cote Jenkins si besoin.
+    depends_on:
+      - jenkins
+
+networks:
+  # Reseau dedie : les conteneurs se joignent par leur nom de service
+  # (jenkins, git-server), ce qui evite toute IP en dur.
+  ci-net:
+    driver: bridge
+
+volumes:
+  # Configuration Jenkins (jobs, credentials, plugins...)
+  jenkins_home:
+  # Installation de la production (Jenkinsfile.prod -> /opt/tri_bulles)
+  prod_install:
+  # Depots git bare (persistance entre les up/down)
+  git_repos:

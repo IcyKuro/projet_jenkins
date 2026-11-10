@@ -2,6 +2,11 @@
 *.pdf
 CLAUDE.md
 .vscode/
+*.zip
+*.mp4
+*.png
+*.svg
+
 
 # Fichiers generes
 tri_bulles

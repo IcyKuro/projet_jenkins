@@ -1,0 +1,36 @@
+============================================================
+ Recuperer le mot de passe initial de Jenkins
+ Methode 1 : docker exec
+============================================================
+
+Avec le compose (depuis la racine du projet) :
+  cd /home/localuser/Documents/ecole/qualite_dev
+  docker compose exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+Equivalent avec le nom du conteneur :
+  docker exec jenkins-qualite cat /var/jenkins_home/secrets/initialAdminPassword
+
+(Pre-requis : le conteneur doit etre demarre avec "docker compose up -d".
+ L'ancien conteneur "jenkins-container" n'existe plus.)
+
+/!\ Toujours lancer la commande depuis la RACINE du projet
+    (/home/localuser/Documents/ecole/qualite_dev), pas depuis jenkins/.
+    Depuis jenkins/, Docker Compose lit jenkins/docker-compose.yml
+    (ancien fichier, projet "jenkins") et repond "service jenkins is
+    not running" alors que le conteneur tourne dans le projet
+    "qualite_dev".
+
+    Solution universelle (fonctionne depuis n'importe quel dossier) :
+      docker exec jenkins-qualite cat /var/jenkins_home/secrets/initialAdminPassword
+
+
+------------------------------------------------------------
+ Rappel
+------------------------------------------------------------
+- Le fichier est cree au premier demarrage de Jenkins.
+- Il est supprime une fois l'assistant de configuration termine
+  (creation du compte admin).
+- S'il n'existe pas : Jenkins est deja configure, aucun mot de
+  passe initial n'est necessaire.
+- Pas besoin de sudo avec docker exec (execute en tant que jenkins).
+============================================================
