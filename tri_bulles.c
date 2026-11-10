@@ -13,7 +13,7 @@ void swap(int *arr, int i, int j)
 void bubbleSort(int arr[], int n)
 {
     if (arr == NULL)
-        return;
+        return
 
     for (int i = 0; i < n - 1; i++)
     {
