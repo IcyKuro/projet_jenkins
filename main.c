@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
         else if (!parseInt(argv[i + 1], &arr[i]))
         {
             fprintf(stderr, "Argument invalide : %s\n", argv[i + 1]);
-            // free(arr);
+            
             return EXIT_FAILURE;
         }
     }
